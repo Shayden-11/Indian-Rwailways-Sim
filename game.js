@@ -24,13 +24,11 @@ let playerLastSignalX = -Infinity;
 let npcSpawnTimer = 0;
 let gameScene;
 const OPP_TRACK_OFFSET = 0;
-
 const RELIEF_TRACK_OFFSET = 28;
 
 // Deadlock breaker
 let deadlockTimer = 0;
 const DEADLOCK_TIMEOUT = 10000;
-
 let signalWaitTimer = 0;
 const SIGNAL_WAIT_CLEAR = 30000;
 let signalWaitFired = false; 
@@ -93,14 +91,13 @@ let stationNames = ROUTES['Mumbai - New Delhi'].stations;
 let routeDistances = ROUTES['Mumbai - New Delhi'].distances;
 let stationIndex = 0; 
 let nextStationDist = routeDistances[1]; 
-let currentStationName = stationNames[1];
+let currentStationName = stationNames[0];
 let currentStationGroup = null;
 const STATION_LENGTH = 9000;
 
 let isAtStation = true;
 let stationWaitTimer = 0;
 let starterSignalReleased = false;
-
 let isInGhat = false;
 let mountainGraphics = null;
 let lastMountainX = 0;
@@ -139,7 +136,6 @@ const TRAIN_PARAMS = {
     'Shatabdi': { scale: 0.32, coachSpacing: 350, locoSpacing: 330, lhb: 'lhb_blue', eog: 'eog_blue' }
 };
 
-// ─── COACH CATALOGUE ──────────────────────────────────────────────────────────
 const COACH_CATALOGUE = [
     { key: 'lhb_red_ac3',              label: 'LHB AC',        color: 0xCC2200, type: 'coach' },
     { key: 'lhb_blue',                 label: 'Wide Win CC',   color: 0x1A5276, type: 'coach' },
@@ -272,8 +268,7 @@ function create() {
 
     clockText = this.add.text(350, dashY, '12:00', { fontSize: '28px', fill: '#FF6B00', fontFamily: 'monospace', fontWeight: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(DEPTH_TEXT);
 
-    const boltColor = 0xFF6B00;
-    cabGraphics.fillStyle(boltColor, 0.4);
+    cabGraphics.fillStyle(0xFF6B00, 0.4);
     [30, 1170].forEach(x => { cabGraphics.fillCircle(x, dashY - 85, 3); cabGraphics.fillCircle(x, dashY + 85, 3); });
 
     this.add.circle(600, dashY, 85, 0x080808).setStrokeStyle(3, 0xFF6B00, 0.5).setScrollFactor(0).setDepth(DEPTH_GAUGE);
@@ -414,8 +409,7 @@ function update(time, delta) {
 
     mountainGraphics.clear();
     if (isInGhat) {
-        let camX = train.x + relativeX;
-        const ridges = [
+        let ridges = [
             { yBase: TRACK_Y - 60,  color: 0x4a6741, peaks: 6, height: 260, seed: 0 },
             { yBase: TRACK_Y - 120, color: 0x3a5233, peaks: 5, height: 200, seed: 1337 },
             { yBase: TRACK_Y - 180, color: 0x2d3e28, peaks: 4, height: 160, seed: 2674 },
@@ -575,7 +569,7 @@ function update(time, delta) {
         coaches.getChildren().forEach(c => c.y = train.y);
     }
 
-    if (!playerOnLoop && speed < 0.5 && upcomingSignalColor === 0xff0000 && nextRedSignalDist > 0 && nextRedSignalDist < 2000) {
+    if (!playerOnLoop && !isAtStation && speed < 0.5 && upcomingSignalColor === 0xff0000 && nextRedSignalDist > 0 && nextRedSignalDist < 2000) {
         deadlockTimer += delta;
         if (deadlockTimer >= DEADLOCK_TIMEOUT) {
             deadlockTimer = 0;
@@ -723,11 +717,17 @@ function update(time, delta) {
                 currentStationGroup.clear(true, true); 
                 currentStationGroup = null; 
                 
-                stationIndex = (stationIndex + 1) % stationNames.length;
+                // Logic to increment or decrement station based on travel direction
+                if (train.flipX) {
+                    stationIndex = (stationIndex - 1 + stationNames.length) % stationNames.length;
+                    // For reverse direction, the distance is from the current station to the previous one
+                    nextStationDist = routeDistances[stationIndex + 1] + (Math.random() * 2000 - 1000);
+                } else {
+                    stationIndex = (stationIndex + 1) % stationNames.length;
+                    nextStationDist = routeDistances[stationIndex] + (Math.random() * 2000 - 1000);
+                }
+
                 currentStationName = stationNames[stationIndex];
-                
-                nextStationDist = routeDistances[stationIndex] + (Math.random() * 2000 - 1000); 
-                
                 stationLabel.setText(currentStationName); 
                 isAtStation = false; 
                 saveProgress(currentRoute, stationIndex, nextStationDist);
@@ -737,7 +737,7 @@ function update(time, delta) {
     distanceLabel.setText(Math.max(0, Math.floor(nextStationDist)) + 'm');
     let coachList = coaches.getChildren();
     coachList.forEach((u, i) => {
-        u.x = (i === 0) ? train.x - 350 : coachList[i - 1].x - 350;
+        u.x = (i === 0) ? train.x - (train.flipX ? -350 : 350) : coachList[i - 1].x - (train.flipX ? -350 : 350);
         u.y = train.y;
     });
 }
@@ -992,8 +992,8 @@ function updateUpcomingSignalNav() {
     let sig1 = ahead[0] || null;
     let sig2 = ahead[1] || null;
 
-    upcomingSignalColor = sig1 ? computeSignalColor(sig1.getData('blockId')) : 0x00ff00;
-    secondSignalColor   = sig2 ? computeSignalColor(sig2.getData('blockId')) : 0x00ff00;
+    upcomingSignalColor = sig1 ? sig1.getData('color') : 0x00ff00;
+    secondSignalColor   = sig2 ? sig2.getData('color') : 0x00ff00;
 
     let navColor;
     if      (upcomingSignalColor === 0xff0000) navColor = 0xff0000;
@@ -1003,26 +1003,9 @@ function updateUpcomingSignalNav() {
     signalNavCircle.setFillStyle(navColor);
 
     nextRedSignalDist = -1;
-
-    let blockIdToX = {};
-    signals.getChildren().forEach(s => {
-        if (s.active) blockIdToX[s.getData('blockId')] = s.x;
-    });
-
-    let currentBlock = playerBlockId >= 0 ? playerBlockId : Math.round(train.x / SIGNAL_SPACING);
-
-    for (let b = currentBlock + 1; b <= currentBlock + 2; b++) {
-        if (computeSignalColor(b) === 0xff0000) {
-            let sigX = (blockIdToX[b] !== undefined) ? blockIdToX[b] : (b * SIGNAL_SPACING);
-            nextRedSignalDist = Math.floor(sigX - train.x);
-            break;
-        }
-    }
-
-    let spawnedRed = ahead.find(s => computeSignalColor(s.getData('blockId')) === 0xff0000);
-    if (spawnedRed) {
-        let d = Math.floor(spawnedRed.x - train.x);
-        if (nextRedSignalDist < 0 || d < nextRedSignalDist) nextRedSignalDist = d;
+    let firstRed = ahead.find(s => s.getData('color') === 0xff0000);
+    if (firstRed) {
+        nextRedSignalDist = Math.floor(firstRed.x - train.x);
     }
 
     if (nextRedSignalDist > 0) {
@@ -1041,8 +1024,6 @@ function spawnNpcTrain(direction) {
 
     let spawnX, npcSpeed;
     let trackY = TRACK_Y;
-
-    let isLooped = false;
 
     if (direction === 1) {
         let safeMin = train.x + SIGNAL_SPACING * 4;
@@ -1075,8 +1056,6 @@ function spawnNpcTrain(direction) {
         coachSprites.push(c);
     }
 
-    let loopStopX = Infinity;
-
     npcTrains.push({
         loco: locoSprite,
         coaches: coachSprites,
@@ -1085,7 +1064,7 @@ function spawnNpcTrain(direction) {
         direction: direction,
         blockId: -1,
         isLooped: false,
-        loopStopX: loopStopX,
+        loopStopX: Infinity,
         loopDone: false,
         lastSignalX: (direction === 1 || direction === 2) ? spawnX : Infinity,
         tailLastSignalX: (direction === 1 || direction === 2) ? spawnX : Infinity,
@@ -1190,7 +1169,7 @@ function updateNpcTrains(delta) {
 
 function updateTrainRake(scene) {
     coaches.clear(true, true);
-    const SCALE = 0.32, SPACING = 350, LOCO_SPACING = 330;
+    const SCALE = 0.32;
 
     train.setScale(SCALE);
     train.setTexture(customLocoKey);
@@ -1272,10 +1251,13 @@ function refreshMenuButtons(scene) {
             let r = ROUTES[routeKey];
             stationNames    = r.stations;
             routeDistances  = r.distances;
-            stationIndex    = 0;
+
+            stationIndex = 0;
             nextStationDist = routeDistances[1];
-            currentStationName = stationNames[1];
-            saveProgress(routeKey, 0, routeDistances[1]);
+            currentStationName = stationNames[0];
+            train.setFlipX(false);
+            
+            saveProgress(routeKey, stationIndex, nextStationDist);
 
             if (currentStationGroup) { currentStationGroup.clear(true, true); currentStationGroup = null; }
             tracks.getChildren().forEach(t => t.destroy()); tracks.clear();
@@ -1310,13 +1292,13 @@ function refreshMenuButtons(scene) {
             playerLastSignalX  = -Infinity;
             npcSpawnTimer      = 0;
 
-            currentStationGroup = spawnStation(scene, newStartX - 8700, stationNames[0]);
+            currentStationGroup = spawnStation(scene, newStartX - 8700, stationNames[stationIndex]);
             spawnSignal(scene, newStartX + 800, 0xff0000, true);
             signalNavCircle.setFillStyle(0xff0000);
             upcomingSignalColor = 0xff0000;
             secondSignalColor   = 0xff0000;
 
-            relativeX = 300;
+            relativeX = train.flipX ? -8600 : 300;
             cameraDolly.x = newStartX + relativeX;
             cameraDolly.y = TRACK_Y;
 
@@ -1333,21 +1315,15 @@ function refreshMenuButtons(scene) {
             currentSpeedLimit    = locoMaxKmh;
             releaseButton.setVisible(false);
             releaseText.setVisible(false);
-            stationLabel.setText(stationNames[1]);
-            distanceLabel.setText(routeDistances[1] + 'm');
+            stationLabel.setText(currentStationName);
+            distanceLabel.setText(Math.floor(nextStationDist) + 'm');
             speedLimitText.setText(locoMaxKmh + ' km/h').setFill('#00ff88');
             currentMenuState = 'MAIN';
             refreshMenuButtons(scene);
         };
-        createMenuBtn(280, "MUMBAI ⇌ NEW DELHI", 0x27ae60, () => {
-            switchRoute(Math.random() < 0.5 ? 'Mumbai - New Delhi' : 'New Delhi - Mumbai');
-        });
-        createMenuBtn(350, "MUMBAI ⇌ PUNE", 0xe67e22, () => {
-            switchRoute(Math.random() < 0.5 ? 'Mumbai - Pune' : 'Pune - Mumbai');
-        });
-        createMenuBtn(420, "COIMBATORE ⇌ CHENNAI", 0x0E9F6E, () => {
-            switchRoute(Math.random() < 0.5 ? 'Coimbatore - Chennai' : 'Chennai - Coimbatore');
-        });
+        createMenuBtn(280, "MUMBAI ⇌ NEW DELHI", 0x27ae60, () => switchRoute(Math.random() < 0.5 ? 'Mumbai - New Delhi' : 'New Delhi - Mumbai'));
+        createMenuBtn(350, "MUMBAI ⇌ PUNE", 0xe67e22, () => switchRoute(Math.random() < 0.5 ? 'Mumbai - Pune' : 'Pune - Mumbai'));
+        createMenuBtn(420, "COIMBATORE ⇌ CHENNAI", 0x0E9F6E, () => switchRoute(Math.random() < 0.5 ? 'Coimbatore - Chennai' : 'Chennai - Coimbatore'));
         createMenuBtn(510, "BACK", 0xc0392b, () => { currentMenuState = 'MAIN'; refreshMenuButtons(scene); });
     }
 }
@@ -1893,17 +1869,24 @@ function showRouteSelector(scene) {
                 let nextIdx = Math.min(stationIndex + 1, stationNames.length - 1);
                 currentStationName = stationNames[nextIdx];
             } else {
-                stationIndex       = 0;
-                nextStationDist    = routeDistances[1];
-                currentStationName = stationNames[1];
-                saveProgress(chosenKey, 0, routeDistances[1]);
+                // Since bidirectional routes exist separately, always spawn at index 0
+                stationIndex = 0;
+                nextStationDist = routeDistances[1];
+                currentStationName = stationNames[0];
+                train.setFlipX(false);
+                saveProgress(chosenKey, stationIndex, nextStationDist);
             }
             stationLabel.setText(currentStationName);
             distanceLabel.setText(Math.floor(nextStationDist) + 'm');
-            currentStationGroup = spawnStation(scene, startX - 8700, stationNames[0]);
+            currentStationGroup = spawnStation(scene, startX - 8700, stationNames[stationIndex]);
             spawnSignal(scene, startX + 800, 0xff0000, true);
             signalNavCircle.setFillStyle(0xff0000);
             upcomingSignalColor = 0xff0000;
+
+            relativeX = train.flipX ? -8600 : 300;
+            cameraDolly.x = startX + relativeX;
+            cameraDolly.y = TRACK_Y;
+
             isAtStation = true; stationWaitTimer = 0;
             scene.physics.resume();
         };
