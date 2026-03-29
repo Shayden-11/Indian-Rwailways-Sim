@@ -164,12 +164,18 @@ const COACH_CATALOGUE = [
 ];
 
 const LOCO_CATALOGUE = [
-    { key: 'wap7', label: 'WAP-7', maxKmh: 130, maxSpeed: 25 },
-    { key: 'wap5', label: 'WAP-5', maxKmh: 160, maxSpeed: 31 },
+    { key: 'wap7', label: 'WAP-7', maxKmh: 130, maxSpeed: 25, type: 'Electric' },
+    { key: 'wap5', label: 'WAP-5', maxKmh: 160, maxSpeed: 31, type: 'Electric' },
+    { key: 'wap4', label: 'WAP-4', maxKmh: 140, maxSpeed: 27, type: 'Electric' },
+    { key: 'wag9g9', label: 'WAG-9', maxKmh: 100, maxSpeed: 19, type: 'Electric' },
+    { key: 'wag5', label: 'WAG-5', maxKmh: 100, maxSpeed: 19, type: 'Electric' },
+    { key: 'wcm1', label: 'WCM-1', maxKmh: 120, maxSpeed: 23, type: 'Electric' },
+    { key: 'wdm3', label: 'WDM-3A', maxKmh: 120, maxSpeed: 23, type: 'Diesel' },
 ];
 
 let customConsist = null;
 let customLocoKey = 'wap7';
+let locoMenuPage = 0;
 let consistBuilderOpen = false;
 let consistBuilderGroup = null;
 let consistPreviewCells = [];
@@ -191,20 +197,28 @@ const REALISTIC_POLE_HEIGHT = 160, REALISTIC_SIGNAL_BOX_HEIGHT = 60, REALISTIC_L
 const DEPTH_SKY = 0, DEPTH_WORLD = 10, DEPTH_UI_BG = 50000, DEPTH_CAB_DETAILS = 50005, DEPTH_GAUGE = 50010, DEPTH_TEXT = 50015, DEPTH_MENU = 70000;
 
 function preload() {
+    // Standard image loading
     this.load.image('wap7', 'assets/wap7.png');
     this.load.image('wap5', 'assets/wap5.png');
+    this.load.image('wag5', 'assets/wag5.png');
+    this.load.image('wag9g9', 'assets/wag9g9.png');
+    this.load.image('wap4', 'assets/wap4.png');
+    this.load.image('wcm1', 'assets/wcm1.png');
+    this.load.image('wdm3', 'assets/wdm3.png');
     this.load.image('lhb_red_ac3', 'assets/lhb_red_ac3.png');
     this.load.image('lhb_blue', 'assets/lhb_blue.png');
-    this.load.image('lhb_blue_acc', 'assets/lhb_blue_acc.png'); 
+    this.load.image('lhb_blue_acc', 'assets/lhb_blue_acc.png');
     this.load.image('eog', 'assets/eog.png');
     this.load.image('lhb_deccanqueenvistadome', 'assets/lhb_deccanqueenvistadome.png');
     this.load.image('eog_blue', 'assets/eog_blue.png');
-    this.load.image('pole', 'assets/ohe_pole.png'); 
+    this.load.image('pole', 'assets/ohe_pole.png');
     this.load.image('lhb_humsafar_ac3', 'assets/lhb_humsafar_ac3.png');
     this.load.image('lhb_shatabdi_grey_acc', 'assets/lhb_shatabdi_grey_acc.png');
     this.load.image('shatabdi_grey_eog', 'assets/shatabdi_grey_eog.png');
     this.load.image('humsafar_eog', 'assets/humsafar_eog.png');
     this.load.image('lhb_humsafar_pantry', 'assets/lhb_humsafar_pantry.png');
+    
+    // Audio loading
     this.load.audio('horn', 'assets/horn.mp3');
 }
 
@@ -1252,19 +1266,41 @@ function refreshMenuButtons(scene) {
         createMenuBtn(460, "GREY SHATABDI (12 Coaches)", 0x7F8C8D, () => { customConsist = null; currentConsist = 'GreyShatabdi'; updateTrainRake(scene); });
         createMenuBtn(540, "BACK", 0xe74c3c, () => { currentMenuState = 'MAIN'; refreshMenuButtons(scene); });
     } else if (currentMenuState === 'SELECT_LOCO') {
-        createMenuBtn(280, "WAP-7  (130 km/h)", 0x2c3e50, () => { 
-            currentLoco = 'WAP7'; 
-            maxSpeed = 25; locoMaxKmh = 130;
-            train.setTexture('wap7');
-            speedLimitText.setText('130 km/h');
-        });
-        createMenuBtn(370, "WAP-5  (160 km/h)", 0x1a5276, () => { 
-            currentLoco = 'WAP5'; 
-            maxSpeed = 31; locoMaxKmh = 160;
-            train.setTexture('wap5');
-            speedLimitText.setText('160 km/h');
-        });
+        createMenuBtn(280, "⚡ ELECTRIC LOCOMOTIVES", 0x2c3e50, () => { currentMenuState = 'SELECT_LOCO_ELEC'; refreshMenuButtons(scene); });
+        createMenuBtn(370, "🛢️ DIESEL LOCOMOTIVES", 0x8A3A0B, () => { currentMenuState = 'SELECT_LOCO_DIESEL'; refreshMenuButtons(scene); });
         createMenuBtn(470, "BACK", 0x7f8c8d, () => { currentMenuState = 'CUSTOM'; refreshMenuButtons(scene); });
+    } else if (currentMenuState === 'SELECT_LOCO_ELEC' || currentMenuState === 'SELECT_LOCO_DIESEL') {
+        let isElec = currentMenuState === 'SELECT_LOCO_ELEC';
+        let locos = LOCO_CATALOGUE.filter(l => l.type === (isElec ? 'Electric' : 'Diesel'));
+        let maxPage = Math.ceil(locos.length / 4) - 1;
+        if(locoMenuPage > maxPage) locoMenuPage = Math.max(0, maxPage);
+        
+        let y = 240;
+        let pageLocos = locos.slice(locoMenuPage * 4, (locoMenuPage + 1) * 4);
+        pageLocos.forEach(l => {
+            createMenuBtn(y, `${l.label}  (${l.maxKmh} km/h)`, isElec ? 0x2c3e50 : 0x8A3A0B, () => {
+                customLocoKey = l.key;
+                currentLoco = l.label;
+                maxSpeed = l.maxSpeed; locoMaxKmh = l.maxKmh;
+                train.setTexture(l.key);
+                speedLimitText.setText(locoMaxKmh + ' km/h');
+                locoMenuPage = 0;
+                currentMenuState = 'SELECT_LOCO';
+                refreshMenuButtons(scene);
+            });
+            y += 62;
+        });
+
+        if (locoMenuPage > 0) {
+            createMenuBtn(y, "▲ PREVIOUS PAGE", 0x4a69bd, () => { locoMenuPage--; refreshMenuButtons(scene); });
+            y += 62;
+        }
+        if (locoMenuPage < maxPage) {
+            createMenuBtn(y, "▼ NEXT PAGE", 0x4a69bd, () => { locoMenuPage++; refreshMenuButtons(scene); });
+            y += 62;
+        }
+        
+        createMenuBtn(580, "BACK", 0x7f8c8d, () => { locoMenuPage = 0; currentMenuState = 'SELECT_LOCO'; refreshMenuButtons(scene); });
     } else if (currentMenuState === 'ROUTE') {
         const switchRoute = (routeKey) => {
             currentRoute = routeKey;
